@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -495,7 +496,7 @@ func (a *App) CreateAccount(initialDeposit float64) (*AccountView, error) {
 	}
 
 	if initialDeposit < 0 {
-		return nil, errors.New("initial deposit cannot be negative")
+		return nil, errors.New("balance cannot be negative")
 	}
 
 	token, err := a.requireAccessToken()
@@ -503,7 +504,7 @@ func (a *App) CreateAccount(initialDeposit float64) (*AccountView, error) {
 		return nil, err
 	}
 
-	account, err := a.service.CreateAccount(a.callContext(), token, api.CreateAccountRequest{InitialDeposit: initialDeposit})
+	account, err := a.service.CreateAccount(a.callContext(), token, api.CreateAccountRequest{Balance: initialDeposit})
 	if err != nil {
 		return nil, err
 	}
@@ -618,13 +619,18 @@ func (a *App) CreateCard(accountID, cardNumber, cvv, expiry string) (*CardView, 
 		return nil, errors.New("account id, card number, cvv, and expiry are required")
 	}
 
+	parsedAccountID, err := strconv.ParseInt(accountID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account id: %w", err)
+	}
+
 	token, err := a.requireAccessToken()
 	if err != nil {
 		return nil, err
 	}
 
 	card, err := a.service.CreateCard(a.callContext(), token, api.CreateCardRequest{
-		AccountID: accountID,
+		AccountID: parsedAccountID,
 		PAN:       cardNumber,
 		CVV:       cvv,
 		Expiry:    expiry,
@@ -790,20 +796,29 @@ func (a *App) CreateTransaction(input TransactionInput) (*TransactionView, error
 		return nil, errors.New("transaction type is required")
 	}
 
+	accountIDValue, err := strconv.ParseInt(input.AccountID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account id: %w", err)
+	}
+
 	token, err := a.requireAccessToken()
 	if err != nil {
 		return nil, err
 	}
 
 	payload := api.CreateTransactionRequest{
-		AccountID: input.AccountID,
+		AccountID: accountIDValue,
 		Amount:    input.Amount,
 		Type:      strings.ToUpper(input.Type),
 	}
 	if input.ToAccountID != nil {
 		trimmed := strings.TrimSpace(*input.ToAccountID)
 		if trimmed != "" {
-			payload.ToAccountID = &trimmed
+			toAccountIDValue, err := strconv.ParseInt(trimmed, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid destination account id: %w", err)
+			}
+			payload.ToAccountID = &toAccountIDValue
 		}
 	}
 	if input.Description != nil {
@@ -976,6 +991,9 @@ func (a *App) updateSessionFromAuth(auth *api.AuthResponse) (*SessionView, error
 	if auth == nil {
 		return nil, errors.New("auth response missing")
 	}
+	if strings.TrimSpace(auth.Token) == "" {
+		return nil, errors.New("auth response missing token")
+	}
 	session := sessionFromAuth(auth)
 	view, err := a.saveSession(session)
 	if err != nil {
@@ -990,15 +1008,18 @@ func sessionFromAuth(auth *api.AuthResponse) *storage.Session {
 	if auth == nil {
 		return nil
 	}
-	expiresAt := auth.IssuedAt.Add(time.Duration(auth.ExpiresIn) * time.Second).Unix()
+	var expiresAt int64
+	if !auth.ExpiresAt.IsZero() {
+		expiresAt = auth.ExpiresAt.UTC().Unix()
+	}
 	session := &storage.Session{
-		AccessToken:  auth.AccessToken,
+		AccessToken:  auth.Token,
 		RefreshToken: auth.RefreshToken,
 		ExpiresAt:    expiresAt,
 	}
 	if auth.User != nil {
 		session.User = &storage.UserSnapshot{
-			ID:        auth.User.ID,
+			ID:        strconv.FormatInt(auth.User.ID, 10),
 			FullName:  auth.User.FullName,
 			Email:     auth.User.Email,
 			Role:      auth.User.Role,
@@ -1032,7 +1053,7 @@ func userViewFromAPI(user *api.User) *UserView {
 		return nil
 	}
 	return &UserView{
-		ID:        user.ID,
+		ID:        strconv.FormatInt(user.ID, 10),
 		FullName:  user.FullName,
 		Email:     user.Email,
 		Role:      user.Role,
@@ -1064,8 +1085,8 @@ func accountViewFromAPI(account *api.Account) *AccountView {
 		return nil
 	}
 	return &AccountView{
-		ID:            account.ID,
-		UserID:        account.UserID,
+		ID:            strconv.FormatInt(account.ID, 10),
+		UserID:        strconv.FormatInt(account.UserID, 10),
 		AccountNumber: account.AccountNumber,
 		Balance:       account.Balance,
 		CreatedAt:     formatTime(account.CreatedAt),
@@ -1079,8 +1100,8 @@ func cardViewFromAPI(card *api.Card) *CardView {
 		return nil
 	}
 	return &CardView{
-		ID:         card.ID,
-		AccountID:  card.AccountID,
+		ID:         strconv.FormatInt(card.ID, 10),
+		AccountID:  strconv.FormatInt(card.AccountID, 10),
 		CardNumber: card.CardNumber,
 		MaskedPAN:  card.MaskedPAN,
 		ExpiryDate: card.ExpiryDate,
@@ -1096,18 +1117,16 @@ func transactionViewFromAPI(tx *api.Transaction) *TransactionView {
 		return nil
 	}
 	view := &TransactionView{
-		ID:          tx.ID,
-		AccountID:   tx.AccountID,
+		ID:          strconv.FormatInt(tx.ID, 10),
+		AccountID:   strconv.FormatInt(tx.AccountID, 10),
 		Amount:      tx.Amount,
 		Type:        tx.Type,
 		Description: tx.Description,
 		CreatedAt:   formatTime(tx.CreatedAt),
 	}
 	if tx.ToAccountID != nil {
-		trimmed := strings.TrimSpace(*tx.ToAccountID)
-		if trimmed != "" {
-			view.ToAccountID = &trimmed
-		}
+		toID := strconv.FormatInt(*tx.ToAccountID, 10)
+		view.ToAccountID = &toID
 	}
 	return view
 }

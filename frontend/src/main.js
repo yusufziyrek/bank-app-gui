@@ -1,199 +1,194 @@
 import './style.css';
 import './app.css';
 
-import { AppInfo, RefreshSession, Logout } from '../wailsjs/go/main/App';
+import { store } from './store/store';
+import { router } from './router/router';
+import { actions } from './store/actions';
+
+import { renderLoadingView } from './views/LoadingView';
+import { renderAuthView } from './views/AuthView';
+import { renderDashboardView } from './views/DashboardView';
+import { renderAccountsView } from './views/AccountsView';
+import { renderCardsView } from './views/CardsView';
+import { renderTransactionsView } from './views/TransactionsView';
+import { renderTransferView } from './views/TransferView';
+import { renderSidebar } from './components/Sidebar';
+import { renderTopBar } from './components/TopBar';
+
+// Initialize Theme
+// Default to light mode to match web design preference
+if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+} else {
+    document.documentElement.classList.remove('dark');
+}
 
 const appRoot = document.querySelector('#app');
 
-const state = {
-    config: null,
-    session: null,
-    status: 'Yükleniyor...',
-    error: null,
-    fetching: false,
-};
+// Register Routes
+router.addRoute('dashboard', renderDashboardView);
+router.addRoute('accounts', renderAccountsView);
+router.addRoute('cards', renderCardsView);
+router.addRoute('transactions', renderTransactionsView);
+router.addRoute('transfer', renderTransferView);
 
-function escapeHTML(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function formatTimestamp(unixSeconds) {
-    if (!unixSeconds || Number.isNaN(unixSeconds)) {
-        return 'n/a';
-    }
-    const date = new Date(unixSeconds * 1000);
-    if (Number.isNaN(date.getTime())) {
-        return 'n/a';
-    }
-    return date.toLocaleString();
-}
-
-function setState(patch) {
-    Object.assign(state, patch);
-    render();
-}
-
-function bindActions() {
-    const refreshButton = document.querySelector('[data-action="refresh"]');
-    if (refreshButton) {
-        refreshButton.addEventListener('click', handleRefresh);
-    }
-
-    const logoutButton = document.querySelector('[data-action="logout"]');
-    if (logoutButton) {
-        logoutButton.addEventListener('click', handleLogout);
-    }
-}
-
+// Main Render Function
 function render() {
-    const { config, session, status, error, fetching } = state;
+    const state = store.getState();
+
+    if (state.currentView === 'loading') {
+        appRoot.innerHTML = renderLoadingView();
+        return;
+    }
+
+    if (!state.session) {
+        appRoot.innerHTML = renderAuthView();
+        return;
+    }
 
     appRoot.innerHTML = `
-        <div class="app-shell">
-            <div class="panel">
-                <h1>BankApp Masaüstü</h1>
-                <p>Backend işlevleri hazır. Bir sonraki adımda bankacılık arayüzünü tasarlayacağız.</p>
-
-                <section class="info-section">
-                    <h2>Durum</h2>
-                    <p class="status ${error ? 'status--error' : ''}">
-                        ${escapeHTML(error ?? status)}
-                    </p>
-                </section>
-
-                <section class="info-section">
-                    <h2>API Yapılandırması</h2>
-                    <dl class="info-list">
-                        <div>
-                            <dt>Temel URL</dt>
-                            <dd>${config ? escapeHTML(config.api_base_url) : 'n/a'}</dd>
-                        </div>
-                    </dl>
-                </section>
-
-                <section class="info-section">
-                    <h2>Oturum</h2>
-                    ${session
-                        ? `
-                            <dl class="info-list">
-                                <div>
-                                    <dt>Kullanıcı</dt>
-                                    <dd>${escapeHTML(session.user?.full_name ?? 'Bilinmiyor')}</dd>
+        <div class="flex min-h-screen bg-background-light text-neutral-text-light dark:bg-background-dark dark:text-neutral-text-dark">
+            ${renderSidebar()}
+            <div class="flex min-h-screen flex-1 flex-col">
+                ${renderTopBar()}
+                <main class="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
+                    ${state.viewError
+            ? `<div class="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-300">
+                                <div class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-base">error</span>
+                                    <span>${state.viewError}</span>
                                 </div>
-                                <div>
-                                    <dt>E-posta</dt>
-                                    <dd>${escapeHTML(session.user?.email ?? 'n/a')}</dd>
-                                </div>
-                                <div>
-                                    <dt>Rol</dt>
-                                    <dd>${escapeHTML(session.user?.role ?? 'n/a')}</dd>
-                                </div>
-                                <div>
-                                    <dt>Token Bitişi</dt>
-                                    <dd>${escapeHTML(formatTimestamp(session.expires_at))}</dd>
-                                </div>
-                            </dl>
-                            <div class="actions">
-                                <button class="action-button" data-action="refresh" ${fetching ? 'disabled' : ''}>Token Yenile</button>
-                                <button class="action-button action-button--secondary" data-action="logout" ${fetching ? 'disabled' : ''}>Çıkış Yap</button>
-                            </div>
-                        `
-                        : `
-                            <p>Henüz bir oturum bulunmuyor. Giriş ekranı tasarımı tamamlandığında burada görünecek.</p>
-                        `
-                    }
-                </section>
+                           </div>`
+            : ''}
+                    <div class="relative">
+                        ${router.render(state.currentView)}
+                        ${state.viewLoading
+            ? `<div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-background-light/70 backdrop-blur-sm dark:bg-background-dark/80">
+                                    <div class="flex items-center gap-2 rounded-lg bg-neutral-light-bg/80 px-4 py-2 text-sm text-neutral-text-light shadow-sm dark:bg-neutral-dark-bg/80 dark:text-neutral-text-dark">
+                                        <span class="material-symbols-outlined animate-spin text-base text-primary">progress_activity</span>
+                                        <span>Veriler güncelleniyor...</span>
+                                    </div>
+                               </div>`
+            : ''}
+                    </div>
+                </main>
             </div>
         </div>
     `;
-
-    bindActions();
 }
 
-async function handleRefresh(event) {
-    event?.preventDefault();
-    if (state.fetching) {
+// Event Delegation
+appRoot.addEventListener('click', (e) => {
+    const target = e.target;
+
+    // Navigation
+    const navBtn = target.closest('[data-nav]');
+    if (navBtn) {
+        const viewId = navBtn.dataset.nav;
+        router.navigate(viewId);
         return;
     }
 
-    setState({
-        fetching: true,
-        error: null,
-        status: 'Oturum yenileniyor...',
-    });
-
-    try {
-        const session = await RefreshSession();
-        setState({
-            session,
-            fetching: false,
-            status: 'Token başarıyla yenilendi.',
-        });
-    } catch (error) {
-        console.error('RefreshSession error', error);
-        setState({
-            fetching: false,
-            error: 'Token yenileme başarısız oldu.',
-        });
-    }
-}
-
-async function handleLogout(event) {
-    event?.preventDefault();
-    if (state.fetching) {
+    // Auth Mode Switch
+    const authModeBtn = target.closest('[data-auth-mode]');
+    if (authModeBtn) {
+        actions.setAuthMode(authModeBtn.dataset.authMode);
         return;
     }
 
-    setState({
-        fetching: true,
-        error: null,
-        status: 'Oturum kapatılıyor...',
-    });
-
-    try {
-        await Logout();
-        setState({
-            session: null,
-            fetching: false,
-            status: 'Oturum kapatıldı.',
-        });
-    } catch (error) {
-        console.error('Logout error', error);
-        setState({
-            fetching: false,
-            error: 'Oturum kapatılamadı.',
-        });
+    // Logout
+    const logoutBtn = target.closest('[data-action="logout"]');
+    if (logoutBtn) {
+        actions.logout();
+        return;
     }
-}
 
-async function loadInitialData() {
-    setState({
-        fetching: true,
-        status: 'Konfigürasyon yükleniyor...',
-        error: null,
-    });
-
-    try {
-        const [config, session] = await AppInfo();
-        setState({
-            config,
-            session,
-            fetching: false,
-            status: session ? 'Aktif oturum bulundu.' : 'Oturum bulunamadı.',
-        });
-    } catch (error) {
-        console.error('AppInfo error', error);
-        setState({
-            fetching: false,
-            error: 'Konfigürasyon alınamadı.',
-        });
+    // Refresh Session
+    const refreshBtn = target.closest('[data-action="refresh-session"]');
+    if (refreshBtn) {
+        actions.loadUserData();
+        return;
     }
-}
 
+    // Card Toggle
+    const cardToggle = target.closest('[data-card-toggle]');
+    if (cardToggle) {
+        const cardId = cardToggle.dataset.cardId;
+        const isActive = cardToggle.checked;
+        actions.updateCardStatus(cardId, isActive);
+        return;
+    }
+});
+
+appRoot.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+    const formType = form.dataset.form;
+
+    if (formType === 'login') {
+        actions.login(formData.get('email'), formData.get('password'));
+    } else if (formType === 'register') {
+        actions.register(formData.get('fullName'), formData.get('email'), formData.get('password'));
+    } else if (formType === 'create-account') {
+        actions.createAccount(formData.get('initialDeposit'));
+        form.reset();
+    } else if (formType === 'create-card') {
+        actions.createCard(
+            formData.get('accountId'),
+            formData.get('cardNumber'),
+            formData.get('cvv'),
+            formData.get('expiry')
+        );
+        form.reset();
+    } else if (formType === 'transfer') {
+        actions.createTransaction(
+            formData.get('fromAccount'),
+            formData.get('toAccount'),
+            formData.get('amount'),
+            formData.get('transactionType'),
+            formData.get('description')
+        );
+        form.reset();
+    }
+});
+
+appRoot.addEventListener('input', (e) => {
+    const target = e.target;
+
+    // Transaction Search
+    if (target.dataset.search === 'transactions') {
+        actions.setTransactionSearch(target.value);
+    }
+});
+
+appRoot.addEventListener('change', (e) => {
+    const target = e.target;
+
+    // Transaction Filter
+    if (target.dataset.select === 'transaction-type') {
+        actions.setTransactionFilter(target.value);
+    }
+});
+
+appRoot.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-action="toggle-theme"]');
+    if (target) {
+        if (document.documentElement.classList.contains('dark')) {
+            document.documentElement.classList.remove('dark');
+            localStorage.theme = 'light';
+        } else {
+            document.documentElement.classList.add('dark');
+            localStorage.theme = 'dark';
+        }
+    }
+});
+
+// Subscribe to store changes
+store.subscribe(render);
+
+// Initial Render
 render();
-loadInitialData();
+
+// Initialize App
+actions.initApp();

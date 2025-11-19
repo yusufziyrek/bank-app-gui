@@ -66,11 +66,11 @@ func (s *Service) Refresh(ctx context.Context, payload RefreshRequest) (*AuthRes
 // Users --------------------------------------------------------------------
 
 func (s *Service) ListUsers(ctx context.Context, token string) ([]User, error) {
-	var result []User
+	var result UsersResponse
 	if err := s.getJSON(ctx, "/api/v1/users", nil, token, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Users, nil
 }
 
 func (s *Service) GetUser(ctx context.Context, token, id string) (*User, error) {
@@ -116,11 +116,11 @@ func (s *Service) DeleteUser(ctx context.Context, token, id string) error {
 // Accounts -----------------------------------------------------------------
 
 func (s *Service) ListAccounts(ctx context.Context, token string) ([]Account, error) {
-	var result []Account
+	var result AccountsResponse
 	if err := s.getJSON(ctx, "/api/v1/accounts", nil, token, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Accounts, nil
 }
 
 func (s *Service) GetAccount(ctx context.Context, token, id string) (*Account, error) {
@@ -154,11 +154,11 @@ func (s *Service) DeleteAccount(ctx context.Context, token, id string) error {
 // Cards --------------------------------------------------------------------
 
 func (s *Service) ListCards(ctx context.Context, token string) ([]Card, error) {
-	var result []Card
+	var result CardsResponse
 	if err := s.getJSON(ctx, "/api/v1/cards", nil, token, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Cards, nil
 }
 
 func (s *Service) GetCard(ctx context.Context, token, id string) (*Card, error) {
@@ -208,11 +208,11 @@ func (s *Service) DeleteCard(ctx context.Context, token, id string) error {
 // Transactions -------------------------------------------------------------
 
 func (s *Service) ListTransactions(ctx context.Context, token string) ([]Transaction, error) {
-	var result []Transaction
+	var result TransactionsResponse
 	if err := s.getJSON(ctx, "/api/v1/transactions", nil, token, &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return result.Transactions, nil
 }
 
 func (s *Service) GetTransaction(ctx context.Context, token, id string) (*Transaction, error) {
